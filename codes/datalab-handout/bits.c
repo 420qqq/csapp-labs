@@ -163,7 +163,9 @@ int getByte(int x, int n) {
  *   Rating: 3 
  */
 int logicalShift(int x, int n) {
-  return ((x<<1)>>1)>>n;
+  int b = 32 + (~n);
+  int a = x >> n;
+  return a & ((1 << b) + (~0) + (1 << b));
 }
 /*
  * bitCount - returns count of number of 1's in word
@@ -183,7 +185,7 @@ int bitCount(int x) {
  *   Rating: 4 
  */
 int bang(int x) {
-  return 2;
+  return (x | ((~x) + 1)) & (1 << 31);
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -192,7 +194,7 @@ int bang(int x) {
  *   Rating: 1
  */
 int tmin(void) {
-  return 2;
+  return 1 << 31;
 }
 /* 
  * fitsBits - return 1 if x can be represented as an 
@@ -204,7 +206,7 @@ int tmin(void) {
  *   Rating: 2
  */
 int fitsBits(int x, int n) {
-  return 2;
+  return ! ((x >> (n + (~0)) + 1) >> 1) ;
 }
 /* 
  * divpwr2 - Compute x/(2^n), for 0 <= n <= 30
@@ -215,7 +217,7 @@ int fitsBits(int x, int n) {
  *   Rating: 2
  */
 int divpwr2(int x, int n) {
-    return 2;
+    return (x>>n)+(!());
 }
 /* 
  * negate - return -x 
@@ -225,7 +227,7 @@ int divpwr2(int x, int n) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return (~x) + 1;
 }
 /* 
  * isPositive - return 1 if x > 0, return 0 otherwise 
@@ -235,7 +237,7 @@ int negate(int x) {
  *   Rating: 3
  */
 int isPositive(int x) {
-  return 2;
+  return (!!x) & (!((x>>31) & 1));
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -245,6 +247,7 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
+  // return !((y + (~x) + (~0)) >> 31) & 1);
   return 2;
 }
 /*
