@@ -175,7 +175,8 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int bitCount(int x) {
-  return 2;
+  
+  return ;
 }
 /* 
  * bang - Compute !x without using !
@@ -217,7 +218,8 @@ int fitsBits(int x, int n) {
  *   Rating: 2
  */
 int divpwr2(int x, int n) {
-    return (x>>n)+(!());
+  int a = (x >> 31) & 1;
+  return (x + (a<<n) + (~0) + (!a)) >> n;
 }
 /* 
  * negate - return -x 
@@ -247,8 +249,10 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  // return !((y + (~x) + (~0)) >> 31) & 1);
-  return 2;
+  // return !((y + (~x) + (~0)) >> 31) & 1); (wrong answer)
+  int b = (y >> 31) & 1;
+  int a = ((x >> 31) & 1) ^ b;
+  return (a & !b) | (!a & !((y + (~x) + (~0)) >> 31));
 }
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
@@ -272,7 +276,10 @@ int ilog2(int x) {
  *   Rating: 2
  */
 unsigned float_neg(unsigned uf) {
- return 2;
+  if (uf & 0x7fffffff > 0x7f800000) {
+    return uf;
+  }
+  return uf ^ 0x80000000;
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
