@@ -175,8 +175,20 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int bitCount(int x) {
-  
-  return ;
+  int m1 = (0x55) | (0x55 << 8);
+  m1 = m1 | (m1 << 16);
+  int m2 = (0x33) | (0x33 << 8);
+  m2 = m2 | (m2 << 16);
+  int m3 = (0x0f) | (0x0f << 8);
+  m3 = m3 | (m3 << 16);
+  int m4 = (0xff) | (0xff << 16);
+  int m5 = (0xff) | (0xff << 8);
+  x = (x & m1) + ((x >> 1) & m1);
+  x = (x & m2) + ((x >> 2) & m2);
+  x = (x & m3) + ((x >> 4) & m3);
+  x = (x & m4) + ((x >> 8) & m4);
+  x = (x & m5) + ((x >> 16) & m5);
+  return x;
 }
 /* 
  * bang - Compute !x without using !
