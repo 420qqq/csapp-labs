@@ -274,7 +274,13 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int ilog2(int x) {
-  return 2;
+  int ans = 0;
+  ans = ans + ((!!(ans + (x>>16))) << 4);
+  ans = ans + ((!!(ans + (x>>8))) << 3);
+  ans = ans + ((!!(ans + (x>>4))) << 2);
+  ans = ans + ((!!(ans + (x>>2))) << 1);
+  ans = ans + (!!(ans + (x>>1)));
+  return ans;
 }
 /* 
  * float_neg - Return bit-level equivalent of expression -f for
@@ -317,7 +323,10 @@ unsigned float_i2f(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
-  return 2;
+  unsigned exp = (uf >> 23) & 0xff;
+  if(exp == 0xff) return ;uf;
+  if(exp == 0) return ((uf & 0x007fffff)<<1) | (uf & (1<<31));
+  return uf + (1<<23);
 }
 
 int main()
