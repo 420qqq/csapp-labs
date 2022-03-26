@@ -324,7 +324,7 @@ unsigned float_i2f(int x) {
  */
 unsigned float_twice(unsigned uf) {
   unsigned exp = (uf >> 23) & 0xff;
-  if(exp == 0xff) return ;uf;
+  if(exp == 0xff) return uf;
   if(exp == 0) return ((uf & 0x007fffff)<<1) | (uf & (1<<31));
   return uf + (1<<23);
 }
