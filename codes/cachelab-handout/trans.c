@@ -5,7 +5,7 @@
  * void trans(int M, int N, int A[N][M], int B[M][N]);
  *
  * A transpose function is evaluated by counting the number of misses
- * on a 1KB direct mapped cache with a block size of 32 bytes.
+ * on a 1KB direct mapped cache with a block size of 16 bytes.
  */ 
 #include <stdio.h>
 #include "cachelab.h"
@@ -22,6 +22,61 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
+    int i, j, k, m, x, y, v5,v6,v3,v4,v7;
+    if(M==32){
+        for(i=0;i<M;i+=8){
+            for(m=0;m<N;m+=8){
+                for(j=0;j<8;++j){
+                    k=A[m][i+j];
+                    x=A[1+m][i+j];
+                    y=A[2+m][i+j];
+                    v3=A[3+m][i+j];
+                    v4=A[4+m][i+j];
+                    v5=A[m+5][i+j];
+                    v6=A[6+m][i+j];
+                    v7=A[7+m][i+j];
+                    B[i+j][m]=k;
+                    B[i+j][m+1]=x;
+                    B[i+j][m+2]=y;
+                    B[i+j][m+3]=v3;
+                    B[i+j][m+4]=v4;
+                    B[i+j][m+5]=v5;
+                    B[i+j][m+6]=v6;
+                    B[i+j][m+7]=v7;
+                }
+            }
+        }
+    }
+    if(M==64){
+        for(i=0;i<M;i+=4){
+            for(m=0;m<N;m+=4){
+                for(j=0;j<4;++j){
+                    k=A[m][i+j];
+                    x=A[1+m][i+j];
+                    y=A[2+m][i+j];
+                    v3=A[3+m][i+j];
+                    B[i+j][m]=k;
+                    B[i+j][m+1]=x;
+                    B[i+j][m+2]=y;
+                    B[i+j][m+3]=v3;
+                }
+            }
+        }
+    }
+    if(M!=N){
+    for (i=0;i<M;i+=16){
+        for(m=0;m<N;m+=16){
+            for(j=0;j<16;++j){
+                if(i+j>=M)break;
+                for(k=0;k<16;++k){
+                    x = m+k;
+                    y = i+j;
+                    if(m+k>=N)break;
+                    B[y][x] = A[x][y];
+                }
+            }
+        }
+    }}
 }
 
 /* 
