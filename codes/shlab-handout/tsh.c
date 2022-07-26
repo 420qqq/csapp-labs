@@ -165,41 +165,42 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
-    // adding sigpromask and blocking
-    // .....
+    fflush(stdout);
     int state = FG;
-    char** argv = malloc(sizeof(char) * MAXLINE);
+    char* argv[MAXARGS];
     if (parseline(cmdline, argv)) {
         state = BG;
     }
 
     if (builtin_cmd(argv)) {
-        free(argv);
         return;
     }
 
     pid_t child_pid;
 
-    sigset_t mask, prev_mask;
+    sigset_t mask, prev_mask, mask_all;
     sigemptyset(&mask);
+    sigfillset(&mask_all);
     sigaddset(&mask, SIGCHLD);
     sigprocmask(SIG_BLOCK, &mask, &prev_mask);
 
     if ((child_pid = fork()) == 0) {
+        // child process
         sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         setpgid(0, 0);
         if (execve(argv[0], argv, environ) == -1) {
-            unix_error("wrong \n");
+            fprintf(stdout, "%s: Command not found.\n", argv[0]);
+            exit(1);
         }
-        free(argv);
     }
-    else {
-        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
-        addjob(jobs, child_pid, state, cmdline);
-        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-        if (state == FG) {
-            waitfg(child_pid);
-        }
+
+    // parent process
+    sigprocmask(SIG_BLOCK, &mask_all, NULL);
+    addjob(jobs, child_pid, state, cmdline);
+    sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+
+    if (state == FG) {
+        waitfg(child_pid);
     }
 
     return;
@@ -288,7 +289,7 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
-    if (strcmp(argv[0], "bg")) {
+    if (strcmp(argv[0], "bg") == 0) {
         if (argv[1] != NULL) {
             pid_t pid;
             if (argv[1][0] == '%') {
@@ -325,7 +326,6 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    // use a busy loop around the sleep function
     while (fgpid(jobs) != 0) {
         sleep(1);
     }
@@ -346,12 +346,19 @@ void waitfg(pid_t pid)
 void sigchld_handler(int sig) 
 {
     // use exactly one call to waitpid
+    fflush(stdout);
     int status;
     pid_t child_pid;
-    while ((child_pid = waitpid(-1, &status, 0)) > 0) {
+    sigset_t mask, prev_mask;
+    sigfillset(&mask);
+
+    while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+        fflush(stdout);
         if (WIFEXITED(status)) {
             deletejob(jobs, child_pid);
         }
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
 
     return;
@@ -366,7 +373,8 @@ void sigint_handler(int sig)
 {
     pid_t pid = fgpid(jobs);
     if (pid != 0) {
-        exit(0);
+        deletejob(jobs, pid);
+        kill(-pid, SIGKILL);
     }
     return;
 }
@@ -380,8 +388,10 @@ void sigtstp_handler(int sig)
 {
     pid_t pid = fgpid(jobs);
     struct job_t* job = getjobpid(jobs, pid);
-    job->state = ST;
-    pause();
+    if (job != NULL) {
+        job->state = ST;
+    }
+    kill(-pid, SIGSTOP);
     return;
 }
 
