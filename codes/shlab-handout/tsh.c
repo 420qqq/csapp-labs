@@ -165,6 +165,43 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    // adding sigpromask and blocking
+    // .....
+    int state = FG;
+    char** argv = malloc(sizeof(char) * MAXLINE);
+    if (parseline(cmdline, argv)) {
+        state = BG;
+    }
+
+    if (builtin_cmd(argv)) {
+        free(argv);
+        return;
+    }
+
+    pid_t child_pid;
+
+    sigset_t mask, prev_mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+
+    if ((child_pid = fork()) == 0) {
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        setpgid(0, 0);
+        if (execve(argv[0], argv, environ) == -1) {
+            unix_error("wrong \n");
+        }
+        free(argv);
+    }
+    else {
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+        addjob(jobs, child_pid, state, cmdline);
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        if (state == FG) {
+            waitfg(child_pid);
+        }
+    }
+
     return;
 }
 
@@ -231,6 +268,18 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if (strcmp(argv[0], "quit") == 0) {
+        exit(0);
+    }
+    if (strcmp(argv[0], "fg") == 0 || strcmp(argv[0], "bg") == 0) {
+        do_bgfg(argv);
+        return 1;
+    }
+    if (strcmp(argv[0], "jobs") == 0) {
+        listjobs(jobs);
+        return 1;
+    }
+
     return 0;     /* not a builtin command */
 }
 
@@ -239,6 +288,35 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    if (strcmp(argv[0], "bg")) {
+        if (argv[1] != NULL) {
+            pid_t pid;
+            if (argv[1][0] == '%') {
+                int jid = atoi(argv[1] + 1);
+                pid = getjobjid(jobs, jid)->pid;
+            }
+            else {
+                pid = atoi(argv[1]);
+            }
+            getjobpid(jobs, pid)->state = BG;
+            kill(-pid, SIGCONT);
+        }
+    }
+    else {
+        if (argv[1] != NULL) {
+            pid_t pid;
+            if (argv[1][0] == '%') {
+                int jid = atoi(argv[1] + 1);
+                pid = getjobjid(jobs, jid)->pid;
+            }
+            else {
+                pid = atoi(argv[1]);
+            }
+            getjobpid(jobs, pid)->state = FG;
+            kill(-pid, SIGCONT);
+            waitfg(pid);
+        }
+    }
     return;
 }
 
@@ -247,6 +325,10 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    // use a busy loop around the sleep function
+    while (fgpid(jobs) != 0) {
+        sleep(1);
+    }
     return;
 }
 
@@ -263,16 +345,29 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    // use exactly one call to waitpid
+    int status;
+    pid_t child_pid;
+    while ((child_pid = waitpid(-1, &status, 0)) > 0) {
+        if (WIFEXITED(status)) {
+            deletejob(jobs, child_pid);
+        }
+    }
+
     return;
 }
 
 /* 
- * sigint_handler - The kernel sends a SIGINT to the shell whenver the
+ * sigint_handler - The kernel sends a SIGINT to the shell whenever the
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.  
  */
 void sigint_handler(int sig) 
 {
+    pid_t pid = fgpid(jobs);
+    if (pid != 0) {
+        exit(0);
+    }
     return;
 }
 
@@ -283,6 +378,10 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t pid = fgpid(jobs);
+    struct job_t* job = getjobpid(jobs, pid);
+    job->state = ST;
+    pause();
     return;
 }
 
