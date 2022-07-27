@@ -187,7 +187,7 @@ void eval(char *cmdline)
 
     if ((child_pid = fork()) == 0) {
         // child process
-        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        // sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         setpgid(0, 0);
         if (execve(argv[0], argv, environ) == -1) {
             fprintf(stdout, "%s: Command not found.\n", argv[0]);
@@ -371,22 +371,32 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
-    // use exactly one call to waitpid
-    fflush(stdout);
+    int older_errno = errno;
     int status;
     pid_t child_pid;
-    sigset_t mask, prev_mask;
-    sigfillset(&mask);
 
-    while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
-        fflush(stdout);
+    while ((child_pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         if (WIFEXITED(status)) {
             deletejob(jobs, child_pid);
         }
-        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        if (WIFSIGNALED(status)) {
+            char buf[MAXLINE];
+            int jid = pid2jid(child_pid);
+            sprintf(buf, "Job [%d] (%d) terminated by signal %d\n", jid, child_pid, SIGINT);
+            write(1, buf, strlen(buf));
+            deletejob(jobs, child_pid);
+        }
+        if (WIFSTOPPED(status)) {
+            pid_t pid = fgpid(jobs);
+            struct job_t* job = getjobpid(jobs, pid);
+            job->state = ST;
+            char buf[MAXLINE];
+            sprintf(buf, "Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
+            write(1, buf, strlen(buf));
+        }
     }
 
+    errno = older_errno;
     return;
 }
 
@@ -397,12 +407,17 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    int older_errno = errno;
+    sigset_t mask, prev_mask;
+    sigfillset(&mask);
+    sigprocmask(SIG_BLOCK, &mask, &prev_mask);
     pid_t pid = fgpid(jobs);
     if (pid != 0) {
-        deletejob(jobs, pid);
         kill(-pid, sig);
-        fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, sig);
+        //fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, sig);
     }
+    sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    errno = older_errno;
     return;
 }
 
@@ -413,13 +428,19 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    int older_errno = errno;
+    sigset_t mask, prev_mask;
+    sigfillset(&mask);
+    sigprocmask(SIG_BLOCK, &mask, &prev_mask);
     pid_t pid = fgpid(jobs);
     struct job_t* job = getjobpid(jobs, pid);
     if (job != NULL) {
-        job->state = ST;
+        // job->state = ST;
         kill(-pid, sig);
-        fprintf(stdout, "Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, sig);
+        //fprintf(stdout, "Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, sig);
     }
+    sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    errno = older_errno;
     return;
 }
 
@@ -558,22 +579,24 @@ void listjob(struct job_t *jobs, pid_t pid)
 
     for (i = 0; i < MAXJOBS; i++) {
         if (jobs[i].pid == pid) {
-            printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+            char buf[MAXLINE];
+            sprintf(buf, "[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+            write(1, buf, strlen(buf));
             switch (jobs[i].state) {
                 case BG:
-                    printf("Running ");
+                    write(1, "Running ", 8);
                     break;
                 case FG:
-                    printf("Foreground ");
+                    write(1, "Foreground ", 11);
                     break;
                 case ST:
-                    printf("Stopped ");
+                    write(1, "Stopped ", 8);
                     break;
                 default:
                     printf("listjobs: Internal error: job[%d].state=%d ",
                            i, jobs[i].state);
             }
-            printf("%s", jobs[i].cmdline);
+            write(1, jobs[i].cmdline, strlen(jobs[i].cmdline));
             return;
         }
     }
