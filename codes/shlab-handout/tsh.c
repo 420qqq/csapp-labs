@@ -76,7 +76,8 @@ int deletejob(struct job_t *jobs, pid_t pid);
 pid_t fgpid(struct job_t *jobs);
 struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
 struct job_t *getjobjid(struct job_t *jobs, int jid); 
-int pid2jid(pid_t pid); 
+int pid2jid(pid_t pid);
+void listjob(struct job_t *jobs, pid_t pid);
 void listjobs(struct job_t *jobs);
 
 void usage(void);
@@ -168,11 +169,11 @@ void eval(char *cmdline)
     fflush(stdout);
     int state = FG;
     char* argv[MAXARGS];
-    if (parseline(cmdline, argv)) {
+    if (parseline(cmdline, argv) == 1) {
         state = BG;
     }
 
-    if (builtin_cmd(argv)) {
+    if (builtin_cmd(argv) == 1) {
         return;
     }
 
@@ -201,6 +202,9 @@ void eval(char *cmdline)
 
     if (state == FG) {
         waitfg(child_pid);
+    }
+    else {
+        listjob(jobs, child_pid);
     }
 
     return;
@@ -289,34 +293,56 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
-    if (strcmp(argv[0], "bg") == 0) {
-        if (argv[1] != NULL) {
-            pid_t pid;
-            if (argv[1][0] == '%') {
-                int jid = atoi(argv[1] + 1);
-                pid = getjobjid(jobs, jid)->pid;
-            }
-            else {
-                pid = atoi(argv[1]);
-            }
-            getjobpid(jobs, pid)->state = BG;
-            kill(-pid, SIGCONT);
+    pid_t pid;
+    struct job_t* job;
+    if (argv[1] == NULL) {
+        fprintf(stdout, "%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+    if (argv[1][0] == '%') {
+        int jid = atoi(argv[1] + 1);
+        if (jid == 0) {
+            fprintf(stdout, "%s: argument must be a PID or %%jobid\n", argv[0]);
+            return;
         }
+        job = getjobjid(jobs, jid);
     }
     else {
-        if (argv[1] != NULL) {
-            pid_t pid;
-            if (argv[1][0] == '%') {
-                int jid = atoi(argv[1] + 1);
-                pid = getjobjid(jobs, jid)->pid;
-            }
-            else {
-                pid = atoi(argv[1]);
-            }
-            getjobpid(jobs, pid)->state = FG;
-            kill(-pid, SIGCONT);
-            waitfg(pid);
+        pid = atoi(argv[1]);
+        if (pid == 0) {
+            fprintf(stdout, "%s: argument must be a PID or %%jobid\n", argv[0]);
+            return;
         }
+        job = getjobpid(jobs, pid);
+    }
+    if (job == NULL) {
+        if (argv[1][0] == '%') {
+            fprintf(stdout, "%s: No such job\n", argv[1]);
+        }
+        else {
+            fprintf(stdout, "%s: No such process\n", argv[1]);
+        }
+        return;
+    }
+    if (strcmp(argv[0], "bg") == 0) {
+        sigset_t mask, prev_mask;
+        sigfillset(&mask);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+        job->state = BG;
+        listjob(jobs, job->pid);
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+
+        kill(-job->pid, SIGCONT);
+    }
+    else {
+        sigset_t mask, prev_mask;
+        sigfillset(&mask);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask);
+        job->state = FG;
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+
+        kill(-job->pid, SIGCONT);
+        waitfg(job->pid);
     }
     return;
 }
@@ -374,7 +400,8 @@ void sigint_handler(int sig)
     pid_t pid = fgpid(jobs);
     if (pid != 0) {
         deletejob(jobs, pid);
-        kill(-pid, SIGKILL);
+        kill(-pid, sig);
+        fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", pid2jid(pid), pid, sig);
     }
     return;
 }
@@ -390,8 +417,9 @@ void sigtstp_handler(int sig)
     struct job_t* job = getjobpid(jobs, pid);
     if (job != NULL) {
         job->state = ST;
+        kill(-pid, sig);
+        fprintf(stdout, "Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, sig);
     }
-    kill(-pid, SIGSTOP);
     return;
 }
 
@@ -521,6 +549,34 @@ int pid2jid(pid_t pid)
             return jobs[i].jid;
         }
     return 0;
+}
+
+// my own function: list job by pid
+void listjob(struct job_t *jobs, pid_t pid)
+{
+    int i;
+
+    for (i = 0; i < MAXJOBS; i++) {
+        if (jobs[i].pid == pid) {
+            printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+            switch (jobs[i].state) {
+                case BG:
+                    printf("Running ");
+                    break;
+                case FG:
+                    printf("Foreground ");
+                    break;
+                case ST:
+                    printf("Stopped ");
+                    break;
+                default:
+                    printf("listjobs: Internal error: job[%d].state=%d ",
+                           i, jobs[i].state);
+            }
+            printf("%s", jobs[i].cmdline);
+            return;
+        }
+    }
 }
 
 /* listjobs - Print the job list */
