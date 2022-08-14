@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <csapp.h>
+#include "csapp.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -7,23 +7,57 @@
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
-
+static const char *connection_close = "Connection: close\r\nProxy-Connection: close\r\n";
 
 void proxy(int connfd) {
     char *hostname = Malloc(30*sizeof(char));
     char *port = Malloc(8*sizeof(char));
+
     int clientfd;
+    size_t n;
+    char buf[MAXLINE];
+    char host_line[MAXLINE];
+    char get_line[MAXLINE];
+    rio_t rio;
 
-    while (Rio_readn(connfd, )) {
-
+    Rio_readinitb(&rio, connfd);
+    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
+        if (strcmp(strstr(buf, buf+5), "Host:") == 0) {
+            strcpy(host_line, buf);
+            for (char *tmp = hostname; (*tmp) != 0; tmp++) {
+                if ((*tmp) == ':') {
+                    char *tmp2 = tmp + 1;
+                    while (isdigit(*tmp2)) tmp2++;
+                    *tmp2 = 0;
+                    strcpy(port, tmp + 1);
+                }
+                if ((*tmp) == '/') {
+                    *tmp = 0;
+                }
+            }
+            strcpy(hostname, buf + 6);
+        }
+        if (strcmp(strstr(buf, buf+3), "GET") == 0) {
+            strcpy(get_line, buf);
+            if (get_line[n - 1] == '1') {
+                get_line[n - 1] = '0';
+            }
+        }
     }
 
     clientfd = Open_clientfd(hostname, port);
-    Rio_writen(clientfd, );
-    while (Rio_readn(clientfd, )) {
+    Rio_writen(clientfd, get_line, strlen(get_line));
+    Rio_writen(clientfd, (void*)user_agent_hdr, sizeof(user_agent_hdr));
+    Rio_writen(clientfd, (void*)connection_close, sizeof(connection_close));
+    Rio_writen(clientfd, host_line, strlen(host_line));
 
+    Rio_readinitb(&rio, clientfd);
+    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
+        Rio_writen(connfd, buf, n);
     }
-    Rio_writen(connfd, );
+
+    Free(hostname);
+    Free(port);
 }
 
 void *thread(void *vargp) {
