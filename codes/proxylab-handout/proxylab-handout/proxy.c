@@ -12,6 +12,7 @@ static const char *connection_close = "Connection: close\r\nProxy-Connection: cl
 void proxy(int connfd) {
     char *hostname = Malloc(30*sizeof(char));
     char *port = Malloc(8*sizeof(char));
+    strcpy(port, "80");
 
     int clientfd;
     size_t n;
@@ -22,27 +23,35 @@ void proxy(int connfd) {
 
     Rio_readinitb(&rio, connfd);
     while ((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
-        if (strcmp(strstr(buf, buf+5), "Host:") == 0) {
+        char tmp[8];
+        strncpy(tmp, buf, 5);
+        if (strcmp(tmp, "Host:") == 0) {
             strcpy(host_line, buf);
-            for (char *tmp = hostname; (*tmp) != 0; tmp++) {
-                if ((*tmp) == ':') {
-                    char *tmp2 = tmp + 1;
+            buf[n] = 0;
+            for (char *t = buf; (*t) != 0; t++) {
+                if ((*t) == ':') {
+                    char *tmp2 = t + 1;
                     while (isdigit(*tmp2)) tmp2++;
                     *tmp2 = 0;
-                    strcpy(port, tmp + 1);
+                    strcpy(port, t + 1);
+                    *t = 0;
                 }
-                if ((*tmp) == '/') {
-                    *tmp = 0;
+                if ((*t) == '/') {
+                    *t = 0;
                 }
             }
             strcpy(hostname, buf + 6);
         }
-        if (strcmp(strstr(buf, buf+3), "GET") == 0) {
+        tmp[3] = 0;
+        if (strcmp(tmp, "GET") == 0) {
             strcpy(get_line, buf);
             if (get_line[n - 1] == '1') {
                 get_line[n - 1] = '0';
             }
         }
+    }
+    if (hostname[strlen(hostname) - 1] == '\n') {
+        hostname[strlen(hostname) - 1] = '\0';
     }
 
     clientfd = Open_clientfd(hostname, port);
