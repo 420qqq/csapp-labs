@@ -10,8 +10,9 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 static const char *connection_close = "Connection: close\r\nProxy-Connection: close\r\n";
 
 void proxy(int connfd) {
+    //fprintf(stdout, "start proxy\n");
     char *hostname = Malloc(30*sizeof(char));
-    char *port = Malloc(8*sizeof(char));
+    char *port = Malloc(15*sizeof(char));
     strcpy(port, "80");
 
     int clientfd;
@@ -22,13 +23,13 @@ void proxy(int connfd) {
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
-    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
+    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) > 2) {
         char tmp[8];
         strncpy(tmp, buf, 5);
         if (strcmp(tmp, "Host:") == 0) {
             strcpy(host_line, buf);
             buf[n] = 0;
-            for (char *t = buf; (*t) != 0; t++) {
+            for (char *t = buf + 5; (*t) != 0; t++) {
                 if ((*t) == ':') {
                     char *tmp2 = t + 1;
                     while (isdigit(*tmp2)) tmp2++;
@@ -42,28 +43,58 @@ void proxy(int connfd) {
             }
             strcpy(hostname, buf + 6);
         }
-        tmp[3] = 0;
-        if (strcmp(tmp, "GET") == 0) {
+        if (strncmp(tmp, "GET", 3) == 0) {
             strcpy(get_line, buf);
-            if (get_line[n - 1] == '1') {
-                get_line[n - 1] = '0';
+            if (get_line[n - 3] == '1') {
+                get_line[n - 3] = '0';
             }
+            char *first = buf, *second = get_line;
+            while ((*first) != 0) {
+                if ((*first) == '/' && ((*(first+1)) == '/')) {
+                    first += 2;
+                }
+                if ((*first) == '/') {
+                    first++;
+                    break;
+                }
+                first++;
+            }
+            while ((*second) != 0) {
+                if ((*second) == ' ') {
+                    second++;
+                    break;
+                }
+                second++;
+            }
+            strcpy(second, "/");
+            strcpy(second+1, first);
         }
     }
-    if (hostname[strlen(hostname) - 1] == '\n') {
-        hostname[strlen(hostname) - 1] = '\0';
+
+    size_t len = strlen(hostname);
+    if (hostname[len - 1] == '\n') {
+        hostname[len - 2] = 0;
+        // because of \r\n
     }
+    fprintf(stdout, "hostname:  %s  \n", hostname);
+    fprintf(stdout, "port:  %s  \n", port);
+    fprintf(stdout, "getline:  %s  \n", get_line);
 
     clientfd = Open_clientfd(hostname, port);
-    Rio_writen(clientfd, get_line, strlen(get_line));
-    Rio_writen(clientfd, (void*)user_agent_hdr, sizeof(user_agent_hdr));
-    Rio_writen(clientfd, (void*)connection_close, sizeof(connection_close));
-    Rio_writen(clientfd, host_line, strlen(host_line));
 
-    Rio_readinitb(&rio, clientfd);
-    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
+    Rio_writen(clientfd, get_line, strlen(get_line));
+    Rio_writen(clientfd, (void*)user_agent_hdr, strlen(user_agent_hdr));
+    Rio_writen(clientfd, (void*)connection_close, strlen(connection_close));
+    Rio_writen(clientfd, host_line, strlen(host_line));
+    Rio_writen(clientfd, "\r\n", 2);
+
+
+    rio_t rio2;
+    Rio_readinitb(&rio2, clientfd);
+    while ((n = Rio_readlineb(&rio2, buf, MAXLINE)) != 0) {
         Rio_writen(connfd, buf, n);
     }
+    //fprintf(stdout, "end proxy\n");
 
     Free(hostname);
     Free(port);
