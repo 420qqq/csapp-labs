@@ -76,7 +76,13 @@ long fitsBits(long x, long n) {
  *  Rating: 4
  */
 long trueFiveEighths(long x) {
-    return ((x / 8) << 2) + (x / 8) + (((x % 8) << 2) + (x % 8)) / 8;
+    long sign = x & 0x8000000000000000;
+    long neg = sign + (~(!!sign)) + 1;
+    long d = neg & 7;
+    long a = (x + d) >> 3;
+    long b = x + (~(a << 3)) + 1;
+    long c = (b << 2) + b;
+    return (a << 2) + a + ((c + d) >> 3);
 }
 /*
  * addOK - Determine if can compute x+y without overflow
@@ -85,8 +91,8 @@ long trueFiveEighths(long x) {
  *   Rating: 3
  */
 long addOK(long x, long y) {
-    return ((x & 0x8000000000000000) ^ (y & 0x8000000000000000)) ||
-           (x + y > y && x + y > x);
+    return !!((x & 0x8000000000000000) ^ (y & 0x8000000000000000)) |
+           !((x ^ (x + y)) & 0x8000000000000000);
 }
 /*
  * isPower2 - returns 1 if x is a power of 2, and 0 otherwise
@@ -120,7 +126,7 @@ long rotateLeft(long x, long n) {
  *   Rating: 4
  */
 long isPalindrome(long x) {
-    return 2L;
+    return 1;
 }
 /*
  * bitParity - returns 1 if x contains an odd number of 0's
