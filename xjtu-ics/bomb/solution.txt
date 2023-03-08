@@ -1,0 +1,6 @@
+There are rumors on the internets.
+1 2 4 7 11 16
+0 e 676
+0 0
+IONEFG
+4 3 2 1 6 5
