@@ -3,4 +3,4 @@ There are rumors on the internets.
 0 e 676
 132 4
 IONEFG
-4 3 2 1 6 5
+2 6 1 5 4 3

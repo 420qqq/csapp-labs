@@ -1,6 +1,22 @@
 Border relations with Canada have never been better.
 1 2 4 8 16 32
-0 207
-0 0
+0 207 0 1 8
+0 0 DrEvil
 IONEFG
 4 3 2 1 6 5
+22
+
+rdi = 0x6030f0
+rsi = input
+
+if rdi == 0 return -1
+rdx = [rdi]
+if (rsi >= rdx){
+    if (rsi==rdx) {
+        return 0
+    }
+    rdi = [rdi+16]
+    return 2*fun()+1
+}
+rdi = [rdi+8]
+return 2*fun()
