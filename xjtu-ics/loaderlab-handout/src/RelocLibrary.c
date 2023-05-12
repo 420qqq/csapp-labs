@@ -73,14 +73,40 @@ void *symbolLookup(LinkMap *dep, const char *name)
 void RelocLibrary(LinkMap *lib, int mode)
 {
     /* Your code here */
-    Elf64_Rela* rela = (Elf64_Rela*)lib->dynInfo[DT_JMPREL]->d_un.d_ptr + lib->addr;
-    for (int i = 0; i < lib->fake) {
-
+    // fake relocation
+    Elf64_Dyn* plt_info = lib->dynInfo[DT_JMPREL];
+    if (plt_info != NULL) {
+        Elf64_Rela* rela = (Elf64_Rela*)plt_info->d_un.d_ptr;
+        LinkMap* fake_map = (LinkMap*)malloc(sizeof(LinkMap));
+        *fake_map = *lib;
+        fake_map->fake = 1;
+        *(uint64_t *)(lib->addr + rela->r_offset) = (uint64_t)symbolLookup(fake_map, "printf") + rela->r_addend;
     }
 
-    void *handle = dlopen("libc.so.6", RTLD_LAZY);
-    void *address = dlsym(handle, "symbol_name");
+    // relocate dyn
+    Elf64_Dyn* rela_info = lib->dynInfo[DT_RELA];
+    if (rela_info != NULL) {
+        Elf64_Rela* rela;
+        int rela_sz = lib->dynInfo[DT_RELASZ]->d_un.d_val;
+        int rela_ent = lib->dynInfo[DT_RELAENT]->d_un.d_val;
+        for (int i = 0; i < rela_sz / rela_ent; ++i) {
+            rela = (Elf64_Rela*)(rela_info->d_un.d_ptr + i * rela_ent);
+            if (ELF64_R_TYPE(rela->r_info) == R_X86_64_RELATIVE) {
+                *(uint64_t *)(lib->addr + rela->r_offset) = rela->r_addend + lib->addr;
+            }
+        }
+    }
 
-    *(uint64_t *)(lib->addr + rela->r_offset) = getSymbolAddr(rela->r_info) + rela->r_addend;
-
+    // init
+    Elf64_Dyn* init_info = lib->dynInfo[DT_INIT];
+    if (init_info != NULL) {
+        void (*func)(void);
+        func = (void (*)(void))init_info->d_un.d_ptr;
+        func();
+        int func_sz = lib->dynInfo[DT_INIT_ARRAYSZ]->d_un.d_val;
+        for (int i = 0; i < func_sz / sizeof(void*); ++i) {
+            func = (void (*)(void))(*(uint64_t*)(lib->dynInfo[DT_INIT_ARRAY]->d_un.d_ptr + i*sizeof(void*)));
+            func();
+        }
+    }
 }

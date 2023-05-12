@@ -159,10 +159,14 @@ void *MapLibrary(const char *libpath)
     }
     lib->addr = (uint64_t)load_va;
 
-    //lib->rela_num = elf_hdr.
-
     fill_info(lib);
     setup_hash(lib);
+
+    // load DT_NEEDED
+    Elf64_Dyn* needed_info = lib->dynInfo[DT_NEEDED];
+    if (needed_info != NULL) {
+
+    }
 
     close(lib_fd);
     return lib;
