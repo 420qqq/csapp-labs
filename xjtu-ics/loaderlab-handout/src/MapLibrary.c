@@ -6,7 +6,7 @@
 #include <unistd.h> //for getpagesize
 #include <sys/mman.h>
 #include <fcntl.h>
-
+#include <sys/stat.h>
 #include "Link.h"
 #include "LoaderInternal.h"
 
@@ -98,5 +98,69 @@ void *MapLibrary(const char *libpath)
     */
    
     /* Your code here */
-    return NULL;
+    LinkMap* lib = (LinkMap*)malloc(sizeof(LinkMap));
+    int lib_fd = open(libpath, O_RDONLY);
+    if (lib_fd == -1) {
+        printf("error in open file\n");
+        exit(-1);
+    }
+
+    struct stat sb;
+    if (fstat(lib_fd, &sb) == -1) {
+        printf("error in open file\n");
+        exit(-1);
+    }
+
+    lib->addr = (uint64_t)mmap(NULL, sb.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, lib_fd, 0);
+    if ((void*)lib->addr == MAP_FAILED) {
+        printf("error in mmap\n");
+        exit(-1);
+    }
+
+    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)lib->addr;
+    Elf64_Phdr* program_hdr = (Elf64_Phdr*)(lib->addr + elf_hdr->e_phoff);
+
+    long tot_sz = 0;
+    for (int i = 0; i < elf_hdr->e_phnum; ++i) {
+        if (program_hdr[i].p_type == PT_LOAD) {
+            tot_sz = ALIGN_UP(program_hdr[i].p_vaddr, getpagesize());
+        }
+    }
+
+    void* load_va = mmap(NULL, tot_sz, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (load_va == MAP_FAILED) {
+        printf("mmap error\n");
+        exit(-1);
+    }
+
+    for (int i = 0; i < elf_hdr->e_phnum; ++i) {
+        if (program_hdr[i].p_type == PT_LOAD) {
+            int flags = 0;
+            if (program_hdr[i].p_flags & PF_W) {
+                flags |= PROT_WRITE;
+            }
+            if (program_hdr[i].p_flags & PF_R) {
+                flags |= PROT_READ;
+            }
+            if (program_hdr[i].p_flags & PF_X) {
+                flags |= PROT_EXEC;
+            }
+            void* va = mmap(load_va + ALIGN_DOWN(program_hdr[i].p_vaddr, getpagesize()), ALIGN_UP(program_hdr[i].p_filesz, getpagesize()), flags,
+                            MAP_FIXED | MAP_PRIVATE, lib_fd, ALIGN_DOWN(program_hdr[i].p_offset, getpagesize()));
+
+            if (va == MAP_FAILED) {
+                perror("mmap failed");
+                exit(-1);
+            }
+        }
+        if (program_hdr[i].p_type == PT_DYNAMIC) {
+            lib->dyn = (Elf64_Dyn*)(program_hdr[i].p_offset+ lib->addr);
+        }
+    }
+
+    fill_info(lib);
+    setup_hash(lib);
+
+    close(lib_fd);
+    return lib;
 }

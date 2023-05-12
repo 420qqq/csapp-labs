@@ -73,4 +73,5 @@ void *symbolLookup(LinkMap *dep, const char *name)
 void RelocLibrary(LinkMap *lib, int mode)
 {
     /* Your code here */
+
 }
