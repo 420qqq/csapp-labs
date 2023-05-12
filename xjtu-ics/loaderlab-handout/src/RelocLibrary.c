@@ -73,5 +73,14 @@ void *symbolLookup(LinkMap *dep, const char *name)
 void RelocLibrary(LinkMap *lib, int mode)
 {
     /* Your code here */
+    Elf64_Rela* rela = (Elf64_Rela*)lib->dynInfo[DT_JMPREL]->d_un.d_ptr + lib->addr;
+    for (int i = 0; i < lib->fake) {
+
+    }
+
+    void *handle = dlopen("libc.so.6", RTLD_LAZY);
+    void *address = dlsym(handle, "symbol_name");
+
+    *(uint64_t *)(lib->addr + rela->r_offset) = getSymbolAddr(rela->r_info) + rela->r_addend;
 
 }

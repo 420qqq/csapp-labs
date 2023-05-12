@@ -154,9 +154,12 @@ void *MapLibrary(const char *libpath)
             }
         }
         if (program_hdr[i].p_type == PT_DYNAMIC) {
-            lib->dyn = (Elf64_Dyn*)(program_hdr[i].p_offset+ lib->addr);
+            lib->dyn = (Elf64_Dyn*)(program_hdr[i].p_offset + lib->addr);
         }
     }
+    lib->addr = (uint64_t)load_va;
+
+    //lib->rela_num = elf_hdr.
 
     fill_info(lib);
     setup_hash(lib);
