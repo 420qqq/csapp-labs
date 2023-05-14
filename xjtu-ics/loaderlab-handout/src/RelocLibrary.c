@@ -8,6 +8,8 @@
 
 #include "Link.h"
 
+void trampoline();
+
 // glibc version to hash a symbol
 static uint_fast32_t
 dl_new_hash(const char *s)
@@ -73,14 +75,53 @@ void *symbolLookup(LinkMap *dep, const char *name)
 void RelocLibrary(LinkMap *lib, int mode)
 {
     /* Your code here */
-    // fake relocation
+    // relocate dependencies
+    if (lib->searchList != NULL) {
+        RelocLibrary(lib->searchList, mode);
+    }
+
+    // relocate plt and fake in the end
     Elf64_Dyn* plt_info = lib->dynInfo[DT_JMPREL];
     if (plt_info != NULL) {
-        Elf64_Rela* rela = (Elf64_Rela*)plt_info->d_un.d_ptr;
-        LinkMap* fake_map = (LinkMap*)malloc(sizeof(LinkMap));
-        *fake_map = *lib;
-        fake_map->fake = 1;
-        *(uint64_t *)(lib->addr + rela->r_offset) = (uint64_t)symbolLookup(fake_map, "printf") + rela->r_addend;
+        int plt_sz = lib->dynInfo[DT_PLTRELSZ]->d_un.d_val;
+        int plt_entry_sz = 24;
+        Elf64_Sym* sym_tab = (Elf64_Sym*)lib->dynInfo[DT_SYMTAB]->d_un.d_ptr;
+        char* str_tab = (char*)lib->dynInfo[DT_STRTAB]->d_un.d_ptr;
+        for (int i = 0; i < plt_sz / plt_entry_sz; ++i) {
+            Elf64_Rela* rela = (Elf64_Rela*)(plt_info->d_un.d_ptr + i * plt_entry_sz);
+
+            char* sym_name = (char*)(str_tab + sym_tab[ELF64_R_SYM(rela->r_info)].st_name);
+            if (mode == 0) {
+                LinkMap* cur_map = lib;
+                uint64_t sym_address = 0;
+                while(sym_address == (uint64_t)NULL) {
+                    sym_address = (uint64_t)symbolLookup(cur_map, sym_name);
+                    if (cur_map->searchList == NULL) {
+                        if (sym_address == (uint64_t)NULL) {
+                            cur_map = (LinkMap*) malloc(sizeof(LinkMap));
+                            *cur_map = *lib;
+                            cur_map->fake = 1;
+                            sym_address = (uint64_t)symbolLookup(cur_map, sym_name);
+                        }
+                        break;
+                    }
+                    cur_map = cur_map->searchList;
+                }
+                if (sym_address == (uint64_t)NULL) {
+                    perror("error in symbol relocation\n");
+                }
+                *(uint64_t *)(lib->addr + rela->r_offset) = sym_address + rela->r_addend;
+            } else {
+
+                // lazy binding
+                *(uint64_t *)(lib->addr + rela->r_offset) = lib->addr + 0x1036 + i * 0x10;
+
+                uint64_t* got_tab = (void*)lib->dynInfo[DT_PLTGOT]->d_un.d_ptr;
+                got_tab[1] = (uint64_t)lib;
+                got_tab[2] = (uint64_t)trampoline;
+                //got_tab[2] = (uint64_t) 0x7370 + lib->addr;//symbolLookup(lib, "trampoline");
+            }
+        }
     }
 
     // relocate dyn
@@ -89,24 +130,37 @@ void RelocLibrary(LinkMap *lib, int mode)
         Elf64_Rela* rela;
         int rela_sz = lib->dynInfo[DT_RELASZ]->d_un.d_val;
         int rela_ent = lib->dynInfo[DT_RELAENT]->d_un.d_val;
+        Elf64_Sym* sym_tab = (Elf64_Sym*)lib->dynInfo[DT_SYMTAB]->d_un.d_ptr;
+        char* str_tab = (char*)lib->dynInfo[DT_STRTAB]->d_un.d_ptr;
         for (int i = 0; i < rela_sz / rela_ent; ++i) {
             rela = (Elf64_Rela*)(rela_info->d_un.d_ptr + i * rela_ent);
+            // R_X86_64_RELATIVE
             if (ELF64_R_TYPE(rela->r_info) == R_X86_64_RELATIVE) {
                 *(uint64_t *)(lib->addr + rela->r_offset) = rela->r_addend + lib->addr;
             }
-        }
-    }
+            // R_X86_64_GLOB_DAT
+            if (ELF64_R_TYPE(rela->r_info) == R_X86_64_GLOB_DAT) {
+                Elf64_Sym* sym = &sym_tab[ELF64_R_SYM(rela->r_info)];
+                if (ELF64_ST_BIND(sym->st_info) == STB_WEAK) {
+                    continue;
+                }
+                char* sym_name = (char*)(str_tab + sym->st_name);
 
-    // init
-    Elf64_Dyn* init_info = lib->dynInfo[DT_INIT];
-    if (init_info != NULL) {
-        void (*func)(void);
-        func = (void (*)(void))init_info->d_un.d_ptr;
-        func();
-        int func_sz = lib->dynInfo[DT_INIT_ARRAYSZ]->d_un.d_val;
-        for (int i = 0; i < func_sz / sizeof(void*); ++i) {
-            func = (void (*)(void))(*(uint64_t*)(lib->dynInfo[DT_INIT_ARRAY]->d_un.d_ptr + i*sizeof(void*)));
-            func();
+                LinkMap* cur_map = lib;
+                uint64_t sym_address = 0;
+                while(sym_address == (uint64_t)NULL) {
+                    sym_address = (uint64_t)symbolLookup(cur_map, sym_name);
+                    if (cur_map->searchList == NULL) {
+                        break;
+                    }
+                    cur_map = cur_map->searchList;
+                }
+                if (sym_address == (uint64_t)NULL) {
+                    perror("error in symbol relocation\n");
+                }
+
+                *(uint64_t *)(lib->addr + rela->r_offset) = lib->addr + sym->st_value;
+            }
         }
     }
 }
